@@ -102,15 +102,19 @@ new_client () {
 		      sort -t . -k 3,3n -k 4,4n |
 		      tail -n1
 		      )
+	if [ -z "$last_address" ]; then
+		last_address=$(grep server /etc/openvpn/server/server.conf | grep -oE '\b[0-9]{1,3}(\.[0-9]{1,3}){3}\b\s' | xargs)
+	fi
+
 	IFS="." read -ra array <<< "$last_address"
 
-	if [[ ${array[3]} -gt 253 ]]; then
+	if [[ ${array[2]} -eq 0 ]] && [[ ${array[3]} -eq 0 ]]; then
+		array[3]=2
+	elif [[ ${array[2]} -gt 253 ]] && [[ ${array[3]} -gt 253 ]]; then
 		array[3]=0
-		let next=${array[2]}+1
-		array[2]=$next
+		let array[2]=${array[2]}+1
 	else
-		let next=${array[3]}+1
-		array[3]=$next
+		let array[3]=${array[3]}+1
 	fi
 
 	printf -v new_ip "%s." "${array[@]}"
@@ -118,6 +122,7 @@ new_client () {
 	echo "$client,$new_ip" >> /etc/openvpn/server/ipp.txt
 	echo "ifconfig-push $new_ip 255.255.0.0" >> /etc/openvpn/server/ccd/"$client"
 	#don't give last 2 addresses (10.8.254.253 - 10.8.254.254)
+	#and first 2 (10.8.0.0 - 10.8.0.1)
 }
 
 if [[ ! -e /etc/openvpn/server/server.conf ]]; then
@@ -513,6 +518,8 @@ else
 				EASYRSA_CRL_DAYS=3650 ./easyrsa gen-crl
 				rm -f /etc/openvpn/server/crl.pem
 				cp /etc/openvpn/server/easy-rsa/pki/crl.pem /etc/openvpn/server/crl.pem
+				rm -f /etc/openvpn/server/ccd/"$client"
+				sed -ni "/$client/!p" /etc/openvpn/server/ipp.txt
 				# CRL is read with each client connection, when OpenVPN is dropped to nobody
 				chown nobody:"$group_name" /etc/openvpn/server/crl.pem
 				echo
